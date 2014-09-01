@@ -10,8 +10,9 @@
 
 using namespace std;
 
-static bool _watchPropagation = 0;
-
+static bool _watchPropagation = 1;
+static bool _debug = 0;
+static int _drawSpeed = 20;
 
 class Particle{
 
@@ -56,6 +57,25 @@ public:
     }
   };
 
+  virtual void Reset(){
+    for(int i = 0; i < particles.size(); ++i){
+      if(particles[i]) delete particles[i];
+    }
+    particles.clear();
+
+    int Npart = 10;
+
+    double vMax = 0.01;
+    int charge = 1;
+    for(int i = 0; i < Npart; ++i){
+      Particle* p = new Particle(random->Gaus(0,vMax),random->Gaus(0,vMax),0.,charge);
+      Add(p);
+      charge *= -1;
+    }
+
+
+  }
+
   vector<Particle*> particles;  
   TRandom* random;
   TVector3 field;
@@ -68,32 +88,18 @@ public:
   Reconstruction(Physics& p) : 
     Physics(p), tracks(0), 
     shakeMin(0.03),shakeMax(0.04),trembleMin(0.001),trembleMax(0.01) 
-  {
-    for(int i = 0; i < particles.size(); ++i){
-
-      tracks.push_back(new TGraph(0));
-      recoTracks.push_back(new Particle());
-
-      fingerAmplitudeX.push_back(random->Uniform(shakeMin, shakeMax));
-      fingerFrequencyX.push_back(random->Uniform(trembleMin, trembleMax));
-      fingerAmplitudeY.push_back(random->Uniform(shakeMin, shakeMax));
-      fingerFrequencyY.push_back(random->Uniform(trembleMin, trembleMax));
-
-    }
-  }
+  {;}
 
   void Trace(int ip, int i, double x, double y){
-
     x += fingerAmplitudeX[ip]*sin(((double)i)*fingerFrequencyX[ip]);
     y += fingerAmplitudeY[ip]*sin(((double)i)*fingerFrequencyY[ip]);
-
     tracks[ip]->SetPoint(i,x,y);
   }
 
   void Fit(){
     for(int i = 0; i < tracks.size(); ++i){
-      TVector3 smear(random->Gaus(0,0.01),
-		     random->Gaus(0,0.01),
+      TVector3 smear(random->Gaus(0,0.00000001),
+		     random->Gaus(0,0.00000001),
 		     0);
 
       recoTracks[i]->momentum = particles[i]->momentum+smear;
@@ -106,7 +112,7 @@ public:
       TGraph* g = new TGraph();
       g->SetLineWidth(3);
       int iii = 0;
-      for(int ii = 0; ii < tracks[i]->GetN(); ii+= 30){
+      for(int ii = 0; ii < tracks[i]->GetN(); ii+= _drawSpeed){
 	double x,y;
 	tracks[i]->GetPoint(ii,x,y);
 	g->SetPoint(iii,x,y);
@@ -124,6 +130,41 @@ public:
     }
   };
 
+  virtual void Reset(vector<Particle*> p){
+
+    particles = p;
+    for(int i = 0; i < tracks.size(); ++i){
+      if(_debug)cout<<"deleting track "<<i<<endl;
+      if(tracks[i]) delete tracks[i];
+      if(_debug)cout<<"deleting recotrack "<<i<<endl;
+      if(recoTracks[i]) delete recoTracks[i];
+    }
+
+    if(_debug)cout<<"pointers deleted"<<endl;    
+
+    tracks.clear();
+    recoTracks.clear();
+
+    fingerAmplitudeX.clear();
+    fingerFrequencyX.clear();
+    fingerAmplitudeY.clear();
+    fingerFrequencyY.clear();
+
+
+    if(_debug)cout<<"Creating reco objects"<<endl;
+    for(int i = 0; i < particles.size(); ++i){
+      if(_debug)cout<<"object "<<i<<endl;
+      tracks.push_back(new TGraph(0));
+      recoTracks.push_back(new Particle());
+
+      fingerAmplitudeX.push_back(random->Uniform(shakeMin, shakeMax));
+      fingerFrequencyX.push_back(random->Uniform(trembleMin, trembleMax));
+      fingerAmplitudeY.push_back(random->Uniform(shakeMin, shakeMax));
+      fingerFrequencyY.push_back(random->Uniform(trembleMin, trembleMax));
+    }
+  }
+
+
   vector<TGraph*> tracks;
   vector<double> fingerAmplitudeX;
   vector<double> fingerFrequencyX;
@@ -136,63 +177,83 @@ public:
 };
 
 
+class Game{
+public:
+
+  Game(TH1* h = 0, TCanvas* c1 = 0){
+    random = new TRandom();
+    physics = new Physics(random);
+    reco = new Reconstruction(*physics);
+    det = new TH2D("det",";x;y",100,-1,1,100,-1,1);
+    hist = h;
+    pad1 = c1;
+  }
+
+  void Generate(){
+
+    det->Reset();
+    physics->Reset();
+    reco->Reset(physics->particles);
+
+    int Nstep = 300;
+
+    if(_debug)cout<<"Particles created"<<endl;
+
+    for(int i = 0; i < Nstep; ++i){
+      for(int ip = 0; ip < physics->particles.size(); ++ip){
+        if(_debug)cout<<"Propagating particle "<<ip<<endl;
+	Particle* p = (physics->particles)[ip];
+	det->Fill(p->position.x(),p->position.y());
+	reco->Trace(ip,i,p->position.x(),p->position.y());
+
+      }
+
+      if(_watchPropagation){
+	pad1->cd();
+	det->Draw("colz");
+	pad1->Update();
+      }
+
+      physics->Update();
+
+    }
+    if(_debug)cout<<"Particles propagated"<<endl;
+
+    pad1->cd();
+    det->Draw("box");
+
+    reco->Fit();
+
+  }
+
+  TRandom* random;
+  Physics* physics;
+  Reconstruction* reco;
+  TH2D* det;
+  TH1* hist;
+  TCanvas* pad1;
+};
+
 void touch(){
 
   TH1::SetDefaultSumw2();
 
-  TRandom* random = new TRandom();
-  Physics* physics = new Physics(random);
-
-  int Npart = 15;
-  int Nstep = 500;
-
-  double vMax = 0.01;
-
-  int charge = 1;
-
-  for(int i = 0; i < Npart; ++i){
-    //    Particle* p = new Particle(random->Uniform(-vMax,vMax),random->Uniform(-vMax,vMax),0.,charge);
-    Particle* p = new Particle(random->Gaus(0,vMax),random->Gaus(0,vMax),0.,charge);
-
-    physics->Add(p);
-    charge *= -1;
-  }
-
-  Reconstruction* reco = new Reconstruction(*physics);
-
-  TH2D* det = new TH2D("det",";x;y",100,-1,1,100,-1,1);
-  TH1D* hist = new TH1D("hist",";x;time",100,0,0.05);
+  int Nevents = 200;
 
   TCanvas* pad1 = new TCanvas("pad1","",800,800);
   TCanvas* pad2 = new TCanvas("pad2","",400,400);
-  
-  for(int i = 0; i < Nstep; ++i){
-    for(int ip = 0; ip < physics->particles.size(); ++ip){
-      Particle* p = (physics->particles)[ip];
-      det->Fill(p->position.x(),p->position.y());
-      reco->Trace(ip,i,p->position.x(),p->position.y());
-    }
+  TH1D* hist = new TH1D("hist",";x;time",100,0,0.05);
 
-    if(_watchPropagation){
-      pad1->cd();
-      det->Draw("colz");
-      pad1->Update();
-    }
+  Game* game = new Game(hist,pad1);
 
-    physics->Update();
-
+  for(int i = 0; i< Nevents; ++i){
+    if(_debug)cout<<"Event : "<<i<<endl;
+    game->Generate();
+    game->reco->Draw(pad1,pad2,hist);
   }
-
-  reco->Fit();
-
-  pad1->cd();
-  det->Draw("box");
-  reco->Draw(pad1,pad2,hist);
-
-  pad2->cd();
-  hist->Draw();
-
 
 
 }
+
+
 
