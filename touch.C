@@ -210,7 +210,7 @@ public:
 
       if(_watchPropagation){
 	pad1->cd();
-	det->Draw("colz");
+	det->Draw("box");
 	pad1->Update();
       }
 
