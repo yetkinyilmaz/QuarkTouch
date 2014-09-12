@@ -12,7 +12,7 @@ using namespace std;
 
 static bool _watchPropagation = 1;
 static bool _debug = 0;
-static int _drawSpeed = 20;
+static int _drawSpeed = 2;
 
 class Particle{
 
@@ -41,6 +41,9 @@ public:
 class Physics{
 public:
   Physics(TRandom* rand = 0) : random(rand), particles(0), field(0,0,0.005) {
+
+    Npart = 10;
+
   };
   void Add(Particle* p){
     particles.push_back(p);
@@ -63,8 +66,6 @@ public:
     }
     particles.clear();
 
-    int Npart = 10;
-
     double vMax = 0.01;
     int charge = 1;
     for(int i = 0; i < Npart; ++i){
@@ -79,6 +80,7 @@ public:
   vector<Particle*> particles;  
   TRandom* random;
   TVector3 field;
+  int Npart;
 
 };
 
@@ -122,12 +124,15 @@ public:
 	++iii;
       }
       
-      hist->Fill(recoTracks[i]->momentum.Mag());
-      if(c2) c2->cd();
-      hist->Draw("");
-      if(c2) c2->Update();
+      if(hist){
+	hist->Fill(recoTracks[i]->momentum.Mag());
+	if(c2) c2->cd();
+	hist->Draw("");
+	if(c2) c2->Update();
+      }
 
     }
+
   };
 
   virtual void Reset(vector<Particle*> p){
@@ -187,6 +192,7 @@ public:
     det = new TH2D("det",";x;y",100,-1,1,100,-1,1);
     hist = h;
     pad1 = c1;
+    Nstep = 200;
   }
 
   void Generate(){
@@ -194,8 +200,6 @@ public:
     det->Reset();
     physics->Reset();
     reco->Reset(physics->particles);
-
-    int Nstep = 300;
 
     if(_debug)cout<<"Particles created"<<endl;
 
@@ -221,9 +225,12 @@ public:
 
     pad1->cd();
     det->Draw("box");
-
     reco->Fit();
+  }
 
+  virtual void FillHist(TH1* h){
+    hist->Fill(reco->recoTracks[0]->momentum.Mag());
+    hist->Draw("");
   }
 
   TRandom* random;
@@ -232,24 +239,55 @@ public:
   TH2D* det;
   TH1* hist;
   TCanvas* pad1;
+  int Nstep;
+
 };
+
+class Level1 : public Game {
+public:
+  Level1(TH1* h = 0, TCanvas* c1 = 0) :
+    Game(h, c1)
+  {
+    physics->Npart = 1;
+    reco->Npart = 1;
+  }
+};
+
+class Level2 : public Game {
+public:
+  Level2(TH1* h = 0, TCanvas* c1 = 0) :
+    Game(h, c1)
+  {
+    physics->Npart = 2;
+    reco->Npart = 2;
+  }
+};
+
+
 
 void touch(){
 
   TH1::SetDefaultSumw2();
 
-  int Nevents = 200;
+  int Nevents = 3;
 
   TCanvas* pad1 = new TCanvas("pad1","",800,800);
   TCanvas* pad2 = new TCanvas("pad2","",400,400);
   TH1D* hist = new TH1D("hist",";x;time",100,0,0.05);
 
-  Game* game = new Game(hist,pad1);
+  Game* game = new Level2(hist,pad1);
 
   for(int i = 0; i< Nevents; ++i){
     if(_debug)cout<<"Event : "<<i<<endl;
     game->Generate();
-    game->reco->Draw(pad1,pad2,hist);
+    if(1){
+      game->reco->Draw(pad1,pad2,hist);
+    }else{
+      pad2->cd();
+      game->reco->Draw(pad1,pad2,0);
+      game->FillHist(hist);
+      pad2->Update();
+    }
   }
 
 
