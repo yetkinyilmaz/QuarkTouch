@@ -1,4 +1,7 @@
+
+#include "TLorentzVector.h"
 #include "TVector3.h"
+
 #include "TCanvas.h"
 #include "TRandom.h"
 #include "TGraph.h"
@@ -10,26 +13,29 @@
 
 using namespace std;
 
-static bool _watchPropagation = 1;
+
+static bool _skipToResult = 1;
+static bool _watchPropagation = 0;
 static bool _debug = 0;
-static int _drawSpeed = 2;
+static int _drawSpeed = 20;
 
 class Particle{
 
 public:
   Particle(float vx = 0.002, float vy = 0.002, float vz = 0, int c = 1) :
     position(0,0,0),
-    momentum(vx,vy,vz),
     velocity(vx,vy,vz),
     charge(c)
-  {;}
+  {
+    momentum = TLorentzVector(vx,vy,vz,velocity.Mag());
+  }
 
     void Propagate(){
     position += velocity;
     velocity += force;
   }
 
-  TVector3 momentum;
+  TLorentzVector momentum;
 
   TVector3 position;
   TVector3 velocity;
@@ -41,10 +47,9 @@ public:
 class Physics{
 public:
   Physics(TRandom* rand = 0) : random(rand), particles(0), field(0,0,0.005) {
-
     Npart = 10;
-
   };
+
   void Add(Particle* p){
     particles.push_back(p);
   }
@@ -66,22 +71,27 @@ public:
     }
     particles.clear();
 
-    double vMax = 0.01;
-    int charge = 1;
+    vMax = 0.01;
+    charge = 1;
     for(int i = 0; i < Npart; ++i){
-      Particle* p = new Particle(random->Gaus(0,vMax),random->Gaus(0,vMax),0.,charge);
+      //      Particle* p = new Particle(random->Gaus(0,vMax),random->Gaus(0,vMax),0.,charge);
+      Particle* p = ProduceParticle();
       Add(p);
       charge *= -1;
     }
 
+  }
 
+  virtual Particle* ProduceParticle(){
+    return new Particle(random->Gaus(0,vMax),random->Gaus(0,vMax),0.,charge);
   }
 
   vector<Particle*> particles;  
   TRandom* random;
   TVector3 field;
   int Npart;
-
+  int charge;
+  double vMax;
 };
 
 class Reconstruction : public Physics{
@@ -100,8 +110,9 @@ public:
 
   void Fit(){
     for(int i = 0; i < tracks.size(); ++i){
-      TVector3 smear(random->Gaus(0,0.00000001),
+      TLorentzVector smear(random->Gaus(0,0.00000001),
 		     random->Gaus(0,0.00000001),
+		     0,
 		     0);
 
       recoTracks[i]->momentum = particles[i]->momentum+smear;
@@ -182,17 +193,31 @@ public:
 };
 
 
+class Upsilon : public Physics {
+public:
+  Upsilon(TRandom* rand = 0) : Physics(rand) {
+    if(_debug) cout<<"Upsilon physics running"<<endl;
+    Npart = 2;
+  };
+
+};
+
+
 class Game{
 public:
 
   Game(TH1* h = 0, TCanvas* c1 = 0){
-    random = new TRandom();
-    physics = new Physics(random);
-    reco = new Reconstruction(*physics);
     det = new TH2D("det",";x;y",100,-1,1,100,-1,1);
     hist = h;
     pad1 = c1;
     Nstep = 200;
+    random = new TRandom();
+    SetPhysics();
+  }
+
+  virtual void SetPhysics(){
+    physics = new Physics(random);
+    reco = new Reconstruction(*physics);
   }
 
   void Generate(){
@@ -209,7 +234,6 @@ public:
 	Particle* p = (physics->particles)[ip];
 	det->Fill(p->position.x(),p->position.y());
 	reco->Trace(ip,i,p->position.x(),p->position.y());
-
       }
 
       if(_watchPropagation){
@@ -261,32 +285,64 @@ public:
     physics->Npart = 2;
     reco->Npart = 2;
   }
+
+  virtual void SetPhysics(){
+    physics = new Upsilon(random);
+    reco = new Reconstruction(*physics);
+  }
+
+  virtual void FillHist(TH1* h){
+    TLorentzVector sum;
+    for(int i = 0; i < reco->recoTracks.size(); ++i){
+      sum += reco->recoTracks[i]->momentum;
+    }
+    hist->Fill(sum.M());
+    hist->Draw("");
+
+  }
+
 };
 
+
+class Level3 : public Game {
+public:
+  Level3(TH1* h = 0, TCanvas* c1 = 0) :
+    Game(h, c1)
+  {
+    physics->Npart = 2;
+    reco->Npart = 2;
+  }
+};
+
+
+TH1D* HistMass(){
+  return new TH1D("hist","",100,0,0.1);
+}
 
 
 void touch(){
 
   TH1::SetDefaultSumw2();
 
-  int Nevents = 3;
+  int Nevents = 3000;
 
   TCanvas* pad1 = new TCanvas("pad1","",800,800);
   TCanvas* pad2 = new TCanvas("pad2","",400,400);
-  TH1D* hist = new TH1D("hist",";x;time",100,0,0.05);
+  TH1D* hist = HistMass();;
 
   Game* game = new Level2(hist,pad1);
+  game->SetPhysics();
 
   for(int i = 0; i< Nevents; ++i){
     if(_debug)cout<<"Event : "<<i<<endl;
     game->Generate();
-    if(1){
+    if(0){
       game->reco->Draw(pad1,pad2,hist);
     }else{
+      if(!_skipToResult) game->reco->Draw(pad1,pad2,0);
       pad2->cd();
-      game->reco->Draw(pad1,pad2,0);
       game->FillHist(hist);
-      pad2->Update();
+      if(!_skipToResult) pad2->Update();
     }
   }
 
