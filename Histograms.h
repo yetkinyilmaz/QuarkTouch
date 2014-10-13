@@ -4,7 +4,7 @@
 #include "TH1D.h"
 
 TH1D* HistMass(){
-  return new TH1D("hist","",100,0,0.1);
+  return new TH1D("hist","",100,0,0.05);
 }
 
 TH1D* HistMomentum(){
