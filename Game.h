@@ -21,10 +21,12 @@ class Game {
 
   virtual void SetPhysics(){
     physics = new Physics(random);
+    cout<<"Npart in SetPhysics : "<<physics->Npart<<endl;
     reco = new Reconstruction(*physics);
   }
 
   void Generate(){
+    cout<<"Npart in Generate : "<<physics->Npart<<endl;
 
     det->Reset();
     physics->Reset();

@@ -35,6 +35,7 @@ class Physics{
 
     vMax = 0.01;
     charge = 1;
+    cout<<"Npart is : "<<Npart<<endl;
     for(int i = 0; i < Npart; ++i){
       Particle* p = ProduceParticle();
       Add(p);

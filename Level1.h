@@ -11,15 +11,16 @@ class Level1 : public Game {
       physics->Npart = 1;
       reco->Npart = 1;
       hist = GetHist();
+      physics->Reset();
     }
 
-  virtual TH1D* GetHist(){
+  TH1D* GetHist(){
     std::cout<<"Momentum histogram"<<endl;
     if(hist) return hist;
     else return HistMomentum();
   }
 
-  virtual void FillHist(){
+  void FillHist(){
 
     double ze = 0;
     for(int i = 0; i < reco->recoTracks.size(); ++i){
